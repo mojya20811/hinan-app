@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ひなんナビ｜いまの場所は安全？</title>
+<meta name="description" content="現在地の警報・注意報と、災害の種類に合った近くの避難場所を確認できます。">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0E7490">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ひなんナビ">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#3E7C6B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ひなんマップ">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #F7F5F0;
+    --card: #FFFDF9;
+    --ink: #34312A;
+    --ink-soft: #6F695C;
+    --line: #E5E0D4;
+    --accent: #3E7C6B;
+    --accent-soft: #E7F0EB;
+    --safe-bg: #EBF3E7;   --safe-line: #4F8A52;  --safe-ink: #2C5631;
+    --adv-bg: #FAF1D8;    --adv-line: #B7791F;   --adv-ink: #7A4F0E;
+    --warn-bg: #F9E8E0;   --warn-line: #C0432E;  --warn-ink: #8C2F1F;
+    --spec-bg: #F0E6F2;   --spec-line: #7E3FA0;  --spec-ink: #5B2A75;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Hiragino Maru Gothic ProN", "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic", "Noto Sans JP", sans-serif;
+    font-size: 17px;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; padding: 14px 14px 60px; }
+
+  /* 場所バー */
+  .place-bar {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+  }
+  .place-label { font-size: 13px; color: var(--ink-soft); }
+  .place-name { font-size: 20px; font-weight: 700; margin: 2px 0 10px; min-height: 1.4em; }
+  .place-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font-family: inherit;
+    font-size: 16px;
+    border-radius: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    padding: 10px 14px;
+    cursor: pointer;
+    min-height: 44px;
+  }
+  button:active { transform: scale(0.98); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+  button.chip-place { background: var(--accent-soft); border-color: #C6D8CE; color: #2E5F50; font-weight: 600; }
+  .place-bar, .status-card, .shelter, details.settings, .info-links a {
+    box-shadow: 0 1px 4px rgba(86, 76, 56, 0.07);
+  }
+  button.small { font-size: 14px; padding: 7px 12px; min-height: 36px; }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  /* ステータスカード */
+  .status-card {
+    margin-top: 14px;
+    border-radius: var(--radius);
+    border: 2px solid var(--line);
+    background: var(--card);
+    padding: 18px 16px;
+  }
+  .status-card.safe    { background: var(--safe-bg); border-color: var(--safe-line); }
+  .status-card.advisory{ background: var(--adv-bg);  border-color: var(--adv-line); }
+  .status-card.warning { background: var(--warn-bg); border-color: var(--warn-line); }
+  .status-card.special { background: var(--spec-bg); border-color: var(--spec-line); }
+  .status-head { display: flex; align-items: center; gap: 12px; }
+  .status-lamp {
+    flex: 0 0 auto;
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: 800; color: #fff;
+    background: var(--ink-soft);
+  }
+  .safe    .status-lamp { background: var(--safe-line); }
+  .advisory .status-lamp{ background: var(--adv-line); }
+  .warning .status-lamp { background: var(--warn-line); }
+  .special .status-lamp { background: var(--spec-line); }
+  .status-title { font-size: 23px; font-weight: 800; line-height: 1.35; }
+  .safe    .status-title { color: var(--safe-ink); }
+  .advisory .status-title{ color: var(--adv-ink); }
+  .warning .status-title { color: var(--warn-ink); }
+  .special .status-title { color: var(--spec-ink); }
+  .status-sub { margin-top: 10px; font-size: 16px; }
+  .warn-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .warn-chip {
+    background: #fff;
+    border: 1.5px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  .warn-chip.advisory { border-color: var(--adv-line); color: var(--adv-ink); }
+  .warn-chip.warning  { border-color: var(--warn-line); color: var(--warn-ink); }
+  .warn-chip.special  { border-color: var(--spec-line); color: var(--spec-ink); }
+  .status-note { margin-top: 12px; font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+  .status-meta { margin-top: 6px; font-size: 12px; color: var(--ink-soft); }
+
+  /* 避難場所セクション */
+  .section-title { font-size: 18px; font-weight: 800; margin: 26px 4px 10px; }
+  .hazard-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .hazard-tabs button {
+    font-size: 15px; font-weight: 700;
+    padding: 12px 4px;
+    border-radius: 12px;
+  }
+  .hazard-tabs button.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .shelter-list { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .shelter {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+  }
+  .shelter-name { font-size: 18px; font-weight: 800; }
+  .shelter-addr { font-size: 14px; color: var(--ink-soft); margin-top: 2px; }
+  .shelter-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .shelter-dist { font-size: 16px; font-weight: 700; color: var(--accent); }
+  .shelter-dist small { font-weight: 600; color: var(--ink-soft); font-size: 13px; }
+  a.map-link {
+    display: inline-block;
+    background: var(--accent);
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+  .hint { font-size: 13px; color: var(--ink-soft); margin: 10px 4px 0; line-height: 1.55; }
+  .empty-box {
+    background: var(--card);
+    border: 1px dashed var(--line);
+    border-radius: var(--radius);
+    padding: 18px;
+    text-align: center;
+    color: var(--ink-soft);
+    margin-top: 12px;
+  }
+  .loading { text-align: center; color: var(--ink-soft); padding: 14px; }
+
+  /* 地図 */
+  .map-wrap { margin-top: 12px; display: none; }
+  #map {
+    height: 320px;
+    border-radius: var(--radius);
+    border: 1px solid var(--line);
+    z-index: 0;
+  }
+  .pin-num {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 50%;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 14px;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .pin-me {
+    width: 18px; height: 18px;
+    background: #2563EB;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 0 5px rgba(37,99,235,0.25);
+  }
+  .num-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px; font-weight: 800;
+    margin-right: 8px;
+    flex: 0 0 auto;
+    vertical-align: middle;
+  }
+  .leaflet-popup-content { font-family: inherit; font-size: 14px; line-height: 1.5; }
+  .leaflet-popup-content a { color: var(--accent); font-weight: 700; }
+
+  /* 公式情報リンク */
+  .info-links { margin-top: 30px; }
+  .info-links .section-title { margin-top: 0; }
+  .info-links a {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 14px;
+    margin-top: 8px;
+    text-decoration: none;
+    color: var(--ink);
+  }
+  .info-links a .ttl { font-weight: 800; font-size: 16px; color: var(--accent); }
+  .info-links a .dsc { font-size: 13px; color: var(--ink-soft); margin-top: 2px; }
+
+  /* 設定（場所の登録） */
+  details.settings { margin-top: 30px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); }
+  details.settings summary {
+    padding: 14px 16px; font-weight: 700; cursor: pointer; font-size: 16px;
+    list-style: none;
+  }
+  details.settings summary::-webkit-details-marker { display: none; }
+  details.settings summary::before { content: "⚙ "; }
+  .settings-body { padding: 0 16px 16px; border-top: 1px solid var(--line); }
+  .settings-body h3 { font-size: 15px; margin: 16px 0 6px; }
+  .addr-search { display: flex; gap: 8px; }
+  .addr-search input {
+    flex: 1;
+    font-family: inherit; font-size: 16px;
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 12px; min-width: 0;
+  }
+  .addr-results { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .addr-results button { text-align: left; font-size: 15px; }
+  .saved-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .saved-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; background: var(--bg); border-radius: 12px; padding: 8px 8px 8px 14px; }
+  .saved-item .nm { font-weight: 700; }
+  .saved-item .ad { font-size: 13px; color: var(--ink-soft); }
+  .msg { margin-top: 10px; font-size: 14px; color: var(--ink-soft); }
+  .msg.error { color: #B23A2A; font-weight: 600; }
+
+  footer { margin-top: 26px; font-size: 12px; color: var(--ink-soft); line-height: 1.7; padding: 0 4px; }
+  footer a { color: var(--accent); }
+
+  @media (max-width: 380px) {
+    .hazard-tabs { grid-template-columns: repeat(2, 1fr); }
+    .status-title { font-size: 21px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 場所 -->
+  <div class="place-bar">
+    <div class="place-label">いまの場所</div>
+    <div class="place-name" id="placeName">場所がまだ決まっていません</div>
+    <div class="place-actions" id="placeActions">
+      <button class="primary" id="btnGps">🧭 現在地をしらべる</button>
+    </div>
+    <div class="msg" id="placeMsg"></div>
+  </div>
+
+  <!-- 警報ステータス -->
+  <div id="statusArea"></div>
+
+  <!-- 避難場所 -->
+  <div class="section-title">🏃 にげる場所をさがす</div>
+  <div class="hint" style="margin-top:-4px; margin-bottom:10px;">災害の種類によって、安全な避難場所はちがいます。あてはまるボタンを押してください。</div>
+  <div class="hazard-tabs" id="hazardTabs"></div>
+  <div class="map-wrap" id="mapWrap"><div id="map"></div></div>
+  <div id="shelterArea"><div class="empty-box">場所が決まると、近くの避難場所がここに表示されます</div></div>
+  <div class="hint" id="shelterHint" style="display:none;">
+    ・距離はまっすぐ測った長さです。実際の道のりはもう少し長くなります。<br>
+    ・川や橋、がけの近くなど、危ない道はさけてください。
+  </div>
+
+  <!-- 設定 -->
+  <details class="settings" id="settingsBox">
+    <summary>場所の登録・へんこう（おうちの人向け）</summary>
+    <div class="settings-body">
+      <h3>住所からさがして登録</h3>
+      <div class="addr-search">
+        <input type="text" id="addrInput" placeholder="例：川崎市中原区小杉町" inputmode="text">
+        <button class="small" id="btnAddrSearch">検索</button>
+      </div>
+      <div class="addr-results" id="addrResults"></div>
+      <h3>登録ずみの場所</h3>
+      <div class="saved-list" id="savedList"></div>
+      <div class="msg" id="settingsMsg">「自宅」「学校」「じいじの家」など、よく行く場所を登録しておくと、GPSが使えないときもワンタップで調べられます。</div>
+    </div>
+  </details>
+
+  <!-- 公式情報リンク -->
+  <div class="info-links">
+    <div class="section-title">📖 もっとくわしく知りたいとき</div>
+    <a href="https://www3.nhk.or.jp/news/saigai/" target="_blank" rel="noopener">
+      <span class="ttl">NHK ニュース・防災</span>
+      <span class="dsc">避難情報や被害のようすを、いちばん早く確認できます</span>
+    </a>
+    <a href="https://www.jma.go.jp/bosai/risk/" target="_blank" rel="noopener">
+      <span class="ttl">気象庁 キキクル（危険度マップ）</span>
+      <span class="dsc">大雨のとき、いま自分のいる場所がどれくらい危ないか地図で見られます</span>
+    </a>
+    <a href="https://disaportal.gsi.go.jp/maps/" target="_blank" rel="noopener">
+      <span class="ttl">重ねるハザードマップ</span>
+      <span class="dsc">自宅のまわりが、もともとどんな災害に弱いか調べられます</span>
+    </a>
+  </div>
+
+  <footer>
+    出典：避難場所データは国土地理院「指定緊急避難場所データ」、警報・注意報は気象庁防災情報、住所検索・逆ジオコーディングは国土地理院API、地図表示はOpenStreetMapを利用しています。<br>
+    このアプリは家庭用の補助ツールです。実際の避難は、市区町村やテレビ・ラジオの最新情報にしたがってください。
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- 定数 ---------- */
+  var TILE_Z = 10;
+  var GSI_TILE = "https://cyberjapandata.gsi.go.jp/xyz/";
+  var JMA_AREA_URL = "https://www.jma.go.jp/bosai/common/const/area.json";
+  var JMA_WARN_URL = "https://www.jma.go.jp/bosai/warning/data/warning/"; // + office + .json
+  var REV_GEO_URL = "https://mreversegeocoder.gsi.go.jp/reverse-geocoder/LonLatToAddress";
+  var ADDR_SEARCH_URL = "https://msearch.gsi.go.jp/address-search/AddressSearch";
+
+  var HAZARDS = [
+    { key: "quake",  label: "地震",       tiles: ["skhb04"] },
+    { key: "tsunami",label: "津波",       tiles: ["skhb05"] },
+    { key: "flood",  label: "大雨・洪水", tiles: ["skhb01", "skhb07"] },
+    { key: "slide",  label: "土砂くずれ", tiles: ["skhb02"] },
+    { key: "surge",  label: "高潮",       tiles: ["skhb03"] },
+    { key: "fire",   label: "大きな火事", tiles: ["skhb06"] }
+  ];
+
+  // 気象庁の警報・注意報コード
+  var WARN_NAMES = {
+    "02": "暴風雪警報", "03": "大雨警報", "04": "洪水警報", "05": "暴風警報",
+    "06": "大雪警報", "07": "波浪警報", "08": "高潮警報",
+    "10": "大雨注意報", "12": "大雪注意報", "13": "風雪注意報", "14": "雷注意報",
+    "15": "強風注意報", "16": "波浪注意報", "17": "融雪注意報", "18": "洪水注意報",
+    "19": "高潮注意報", "20": "濃霧注意報", "21": "乾燥注意報", "22": "なだれ注意報",
+    "23": "低温注意報", "24": "霜注意報", "25": "着氷注意報", "26": "着雪注意報",
+    "27": "その他の注意報",
+    "32": "暴風雪特別警報", "33": "大雨特別警報", "35": "暴風特別警報",
+    "36": "大雪特別警報", "37": "波浪特別警報", "38": "高潮特別警報"
+  };
+  function warnSeverity(code) {
+    var n = parseInt(code, 10);
+    if (n >= 32) return "special";
+    if (n <= 9) return "warning";
+    return "advisory";
+  }
+  // 警報の種類 → おすすめの避難場所タブ
+  var WARN_TO_HAZARD = {
+    "03": "flood", "04": "flood", "33": "flood",
+    "08": "surge", "38": "surge", "19": "surge",
+    "10": "flood", "18": "flood"
+  };
+
+  /* ---------- 状態 ---------- */
+  var state = {
+    loc: null,            // {lat, lon, label, muniCd, muniName, detail}
+    hazard: null,         // 選択中の災害キー
+    maxSeverity: "none",
+    areaData: null,
+    tileCache: {}
+  };
+
+  /* ---------- ユーティリティ ---------- */
+  function $(id) { return document.getElementById(id); }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fetchJson(url) {
+    return fetch(url, { cache: "no-store" }).then(function (res) {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    });
+  }
+  function haversine(lat1, lon1, lat2, lon2) {
+    var R = 6371000;
+    var toRad = function (d) { return d * Math.PI / 180; };
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+  function fmtDist(m) {
+    if (m < 1000) return Math.round(m) + " m";
+    return (Math.round(m / 100) / 10).toFixed(1) + " km";
+  }
+  function walkMin(m) { return Math.max(1, Math.ceil(m / 80)); }
+  function lsGet(key) {
+    try { return JSON.parse(localStorage.getItem(key)); } catch (e) { return null; }
+  }
+  function lsSet(key, val) {
+    try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+  }
+
+  /* ---------- 気象庁エリアマスタ ---------- */
+  function getAreaData() {
+    if (state.areaData) return Promise.resolve(state.areaData);
+    var cached = lsGet("jma_area_v1");
+    if (cached && cached.ts && (Date.now() - cached.ts < 30 * 24 * 3600 * 1000) && cached.data) {
+      state.areaData = cached.data;
+      return Promise.resolve(cached.data);
+    }
+    return fetchJson(JMA_AREA_URL).then(function (data) {
+      state.areaData = data;
+      lsSet("jma_area_v1", { ts: Date.now(), data: data });
+      return data;
+    });
+  }
+  // 5桁の市区町村コード → class20コードと名称
+  function findClass20(area, muniCd) {
+    var c20 = area.class20s || {};
+    var direct = muniCd + "00";
+    if (c20[direct]) return { code: direct, name: c20[direct].name };
+    var keys = Object.keys(c20);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i].indexOf(muniCd) === 0) return { code: keys[i], name: c20[keys[i]].name };
+    }
+    return null;
+  }
+  // class20コード → 気象台(office)コード
+  function findOffice(area, class20code) {
+    var code = (area.class20s[class20code] || {}).parent;
+    var hops = 0;
+    while (code && hops < 6) {
+      if (area.offices && area.offices[code]) return code;
+      if (area.class15s && area.class15s[code]) { code = area.class15s[code].parent; }
+      else if (area.class10s && area.class10s[code]) { code = area.class10s[code].parent; }
+      else { break; }
+      hops++;
+    }
+    return null;
+  }
+
+  /* ---------- 警報・注意報 ---------- */
+  function loadWarnings() {
+    var loc = state.loc;
+    var box = $("statusArea");
+    if (!loc) { box.innerHTML = ""; return Promise.resolve(); }
+    box.innerHTML = '<div class="status-card"><div class="loading">警報・注意報をしらべています…</div></div>';
+
+    return getAreaData().then(function (area) {
+      var c20 = findClass20(area, loc.muniCd);
+      if (!c20) throw new Error("地域コードが見つかりませんでした");
+      loc.muniName = c20.name;
+      renderPlaceName();
+      var office = findOffice(area, c20.code);
+      if (!office) throw new Error("気象台コードが見つかりませんでした");
+
+      return fetchJson(JMA_WARN_URL + office + ".json").then(function (warn) {
+        var list = [];
+        var types = warn.areaTypes || [];
+        for (var t = 0; t < types.length; t++) {
+          var areas = types[t].areas || [];
+          for (var a = 0; a < areas.length; a++) {
+            if (areas[a].code === c20.code) {
+              var ws = areas[a].warnings || [];
+              for (var w = 0; w < ws.length; w++) {
+                var item = ws[w];
+                if (!item.code) continue;
+                if (item.status === "解除" || item.status === "発表警報・注意報はなし") continue;
+                list.push(item);
+              }
+            }
+          }
+        }
+        renderStatus(list, warn.reportDatetime);
+      });
+    }).catch(function (err) {
+      box.innerHTML =
+        '<div class="status-card"><div class="status-sub">警報・注意報の情報がうまく取れませんでした（' + esc(err.message) + '）。<br>' +
+        '電波の良いところで「もう一度しらべる」を押してみてください。</div>' +
+        '<div style="margin-top:12px"><button class="small" onclick="window.__retryWarn()">もう一度しらべる</button></div></div>';
+    });
+  }
+
+  function renderStatus(list, reportDatetime) {
+    var box = $("statusArea");
+    var sev = "none";
+    var order = { advisory: 1, warning: 2, special: 3 };
+    var chips = "";
+    var suggested = null;
+    var suggestedSev = 0;
+
+    for (var i = 0; i < list.length; i++) {
+      var code = list[i].code;
+      var s = warnSeverity(code);
+      if (order[s] > (order[sev] || 0)) sev = s;
+      var name = WARN_NAMES[code] || ("警報・注意報（コード" + esc(code) + "）");
+      if (list[i].condition) name += "（" + esc(list[i].condition) + "）";
+      chips += '<span class="warn-chip ' + s + '">' + esc(name) + "</span>";
+      if (WARN_TO_HAZARD[code] && order[s] > suggestedSev) {
+        suggested = WARN_TO_HAZARD[code];
+        suggestedSev = order[s];
+      }
+    }
+    state.maxSeverity = sev;
+
+    var title = "", sub = "", lamp = "";
+    if (sev === "none") {
+      title = "いま、この場所に警報・注意報は出ていません";
+      sub = "ふだんどおりで大丈夫です。";
+      lamp = "✓";
+    } else if (sev === "advisory") {
+      title = "注意報が出ています";
+      sub = "すぐに避難が必要な状況ではありません。天気の変化に気をつけて過ごしましょう。";
+      lamp = "i";
+    } else if (sev === "warning") {
+      title = "警報が出ています";
+      sub = "テレビ・ラジオや市区町村からの避難情報を確認しましょう。心配なときは、下の避難場所を見ておきましょう。";
+      lamp = "!";
+    } else {
+      title = "特別警報が出ています";
+      sub = "ただちに命を守る行動をとってください。下の避難場所か、近くのより安全な場所へ移動しましょう。";
+      lamp = "!!";
+    }
+
+    var note = "";
+    if (sev !== "none") {
+      note = '<div class="status-note">この発表は「' + esc(state.loc.muniName || "この市区町村") +
+        '」全体に対するものです。いまいる場所がただちに危険とはかぎりません。</div>';
+    }
+    var meta = reportDatetime
+      ? '<div class="status-meta">気象庁発表：' + esc(formatJst(reportDatetime)) + "　|　" +
+        '<a href="#" onclick="window.__retryWarn(); return false;">情報を更新</a></div>'
+      : "";
+
+    box.innerHTML =
+      '<div class="status-card ' + sev + '">' +
+      '<div class="status-head"><div class="status-lamp">' + lamp + '</div>' +
+      '<div class="status-title">' + title + "</div></div>" +
+      '<div class="status-sub">' + sub + "</div>" +
+      (chips ? '<div class="warn-chips">' + chips + "</div>" : "") +
+      note + meta + "</div>";
+
+    // 警報に合わせて避難場所タブを自動選択（手動選択がまだのときだけ）
+    if (suggested && !state.userPickedHazard) {
+      selectHazard(suggested, false);
+    } else if (!state.hazard) {
+      selectHazard("quake", false);
+    }
+  }
+
+  function formatJst(iso) {
+    try {
+      var d = new Date(iso);
+      return (d.getMonth() + 1) + "月" + d.getDate() + "日 " +
+        d.getHours() + ":" + ("0" + d.getMinutes()).slice(-2);
+    } catch (e) { return iso; }
+  }
+
+  /* ---------- 避難場所 ---------- */
+  function lonLatToTile(lon, lat, z) {
+    var n = Math.pow(2, z);
+    var x = (lon + 180) / 360 * n;
+    var latRad = lat * Math.PI / 180;
+    var y = (1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n;
+    return { x: x, y: y };
+  }
+  function tileUrlsAround(layer, lon, lat) {
+    var t = lonLatToTile(lon, lat, TILE_Z);
+    var x0 = Math.floor(t.x), y0 = Math.floor(t.y);
+    var sx = (t.x - x0) < 0.5 ? -1 : 1;
+    var sy = (t.y - y0) < 0.5 ? -1 : 1;
+    var coords = [[x0, y0], [x0 + sx, y0], [x0, y0 + sy], [x0 + sx, y0 + sy]];
+    var urls = [];
+    for (var i = 0; i < coords.length; i++) {
+      urls.push(GSI_TILE + layer + "/" + TILE_Z + "/" + coords[i][0] + "/" + coords[i][1] + ".geojson");
+    }
+    return urls;
+  }
+  function fetchTile(url) {
+    if (state.tileCache[url]) return Promise.resolve(state.tileCache[url]);
+    return fetch(url).then(function (res) {
+      if (res.status === 404) return { features: [] };
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    }).then(function (gj) {
+      var feats = (gj && gj.features) ? gj.features : [];
+      state.tileCache[url] = feats;
+      return feats;
+    }).catch(function () {
+      return [];
+    });
+  }
+
+  /* ---------- 地図 ---------- */
+  var map = null;
+  var markerLayer = null;
+  function ensureMap() {
+    if (typeof L === "undefined") return null;
+    if (map) return map;
+    map = L.map("map", { zoomControl: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "地図：&copy; <a href='https://www.openstreetmap.org/copyright' target='_blank' rel='noopener'>OpenStreetMap</a> contributors"
+    }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+    return map;
+  }
+  function hideMap() { $("mapWrap").style.display = "none"; }
+  function renderMap(loc, items) {
+    if (typeof L === "undefined") { hideMap(); return; }
+    $("mapWrap").style.display = "block";
+    var m = ensureMap();
+    if (!m) { hideMap(); return; }
+    markerLayer.clearLayers();
+
+    var meIcon = L.divIcon({ className: "", html: '<div class="pin-me"></div>', iconSize: [18, 18], iconAnchor: [9, 9] });
+    L.marker([loc.lat, loc.lon], { icon: meIcon, zIndexOffset: 1000 })
+      .bindPopup("<b>いまの場所</b>").addTo(markerLayer);
+
+    var bounds = [[loc.lat, loc.lon]];
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var icon = L.divIcon({ className: "", html: '<div class="pin-num">' + (i + 1) + "</div>", iconSize: [28, 28], iconAnchor: [14, 14] });
+      var gmap = "https://www.google.com/maps/dir/?api=1&destination=" + it.lat + "," + it.lon + "&travelmode=walking";
+      L.marker([it.lat, it.lon], { icon: icon })
+        .bindPopup("<b>" + esc(it.name) + "</b><br>" + fmtDist(it.dist) + "（徒歩 約" + walkMin(it.dist) + "分）<br>" +
+          '<a href="' + gmap + '" target="_blank" rel="noopener">道順を見る</a>')
+        .addTo(markerLayer);
+      bounds.push([it.lat, it.lon]);
+    }
+    m.fitBounds(bounds, { padding: [34, 34], maxZoom: 16 });
+    setTimeout(function () {
+      m.invalidateSize();
+      m.fitBounds(bounds, { padding: [34, 34], maxZoom: 16 });
+    }, 120);
+  }
+
+  function loadShelters() {
+    var loc = state.loc;
+    var box = $("shelterArea");
+    if (!loc) {
+      box.innerHTML = '<div class="empty-box">場所が決まると、近くの避難場所がここに表示されます</div>';
+      $("shelterHint").style.display = "none";
+      hideMap();
+      return;
+    }
+    if (!state.hazard) {
+      box.innerHTML = '<div class="empty-box">上のボタンから災害の種類をえらんでください</div>';
+      $("shelterHint").style.display = "none";
+      hideMap();
+      return;
+    }
+    var hz = null;
+    for (var i = 0; i < HAZARDS.length; i++) {
+      if (HAZARDS[i].key === state.hazard) { hz = HAZARDS[i]; break; }
+    }
+    box.innerHTML = '<div class="loading">「' + esc(hz.label) + '」のときの避難場所をさがしています…</div>';
+    $("shelterHint").style.display = "none";
+
+    var urls = [];
+    for (var li = 0; li < hz.tiles.length; li++) {
+      urls = urls.concat(tileUrlsAround(hz.tiles[li], loc.lon, loc.lat));
+    }
+    Promise.all(urls.map(fetchTile)).then(function (results) {
+      var seen = {};
+      var items = [];
+      for (var r = 0; r < results.length; r++) {
+        var feats = results[r];
+        for (var f = 0; f < feats.length; f++) {
+          var ft = feats[f];
+          if (!ft.geometry || !ft.geometry.coordinates) continue;
+          var lon2 = ft.geometry.coordinates[0];
+          var lat2 = ft.geometry.coordinates[1];
+          var p = ft.properties || {};
+          var name = p.name || p["施設・場所名"] || "（名称不明）";
+          var addr = p.address || p["住所"] || "";
+          var key = name + "|" + lat2.toFixed(5) + "|" + lon2.toFixed(5);
+          if (seen[key]) continue;
+          seen[key] = true;
+          items.push({
+            name: name, addr: addr, lat: lat2, lon: lon2,
+            dist: haversine(loc.lat, loc.lon, lat2, lon2)
+          });
+        }
+      }
+      items.sort(function (a, b) { return a.dist - b.dist; });
+      items = items.slice(0, 6);
+
+      if (items.length === 0) {
+        box.innerHTML = '<div class="empty-box">近くに「' + esc(hz.label) + '」用の指定緊急避難場所が見つかりませんでした。<br>' +
+          '市区町村のハザードマップもあわせて確認してください。</div>';
+        hideMap();
+        return;
+      }
+      renderMap(loc, items);
+      var html = "";
+      for (var k = 0; k < items.length; k++) {
+        var it = items[k];
+        var gmap = "https://www.google.com/maps/dir/?api=1&destination=" +
+          it.lat + "," + it.lon + "&travelmode=walking";
+        html +=
+          '<div class="shelter">' +
+          '<div class="shelter-name"><span class="num-badge">' + (k + 1) + "</span>" + esc(it.name) + "</div>" +
+          (it.addr ? '<div class="shelter-addr">' + esc(it.addr) + "</div>" : "") +
+          '<div class="shelter-row">' +
+          '<div class="shelter-dist">' + fmtDist(it.dist) +
+          ' <small>徒歩 約' + walkMin(it.dist) + "分</small></div>" +
+          '<a class="map-link" href="' + gmap + '" target="_blank" rel="noopener">📍 地図で道順を見る</a>' +
+          "</div></div>";
+      }
+      box.innerHTML = '<div class="shelter-list">' + html + "</div>";
+      $("shelterHint").style.display = "block";
+    });
+  }
+
+  /* ---------- 災害タブ ---------- */
+  function renderHazardTabs() {
+    var box = $("hazardTabs");
+    var html = "";
+    for (var i = 0; i < HAZARDS.length; i++) {
+      var h = HAZARDS[i];
+      html += '<button data-key="' + h.key + '" class="' +
+        (state.hazard === h.key ? "on" : "") + '">' + esc(h.label) + "</button>";
+    }
+    box.innerHTML = html;
+    var btns = box.querySelectorAll("button");
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].addEventListener("click", function () {
+        selectHazard(this.getAttribute("data-key"), true);
+      });
+    }
+  }
+  function selectHazard(key, byUser) {
+    state.hazard = key;
+    if (byUser) state.userPickedHazard = true;
+    renderHazardTabs();
+    loadShelters();
+  }
+
+  /* ---------- 場所の管理 ---------- */
+  function getSavedPlaces() { return lsGet("hinan_places") || []; }
+  function setSavedPlaces(arr) { lsSet("hinan_places", arr); }
+
+  function renderPlaceName() {
+    var loc = state.loc;
+    if (!loc) {
+      $("placeName").textContent = "場所がまだ決まっていません";
+      return;
+    }
+    var txt = loc.label ? loc.label + "（" + (loc.muniName || "") + (loc.detail || "") + "）"
+                        : (loc.muniName || "") + (loc.detail || "");
+    $("placeName").textContent = txt || "場所を確認中…";
+  }
+
+  function renderPlaceActions() {
+    var box = $("placeActions");
+    var html = '<button class="primary" id="btnGps">🧭 現在地をしらべる</button>';
+    var places = getSavedPlaces();
+    for (var i = 0; i < places.length; i++) {
+      html += '<button class="chip-place" data-i="' + i + '">' + esc(places[i].label) + "</button>";
+    }
+    box.innerHTML = html;
+    $("btnGps").addEventListener("click", useGps);
+    var chips = box.querySelectorAll(".chip-place");
+    for (var c = 0; c < chips.length; c++) {
+      chips[c].addEventListener("click", function () {
+        var p = getSavedPlaces()[parseInt(this.getAttribute("data-i"), 10)];
+        if (p) setLocation(p.lat, p.lon, p.label);
+      });
+    }
+  }
+
+  function useGps() {
+    var msg = $("placeMsg");
+    if (!navigator.geolocation) {
+      msg.className = "msg error";
+      msg.textContent = "この環境では位置情報が使えません。登録した場所のボタンを使ってください。";
+      return;
+    }
+    msg.className = "msg";
+    msg.textContent = "現在地をしらべています…（位置情報の許可を求められたら「許可」を押してください）";
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      msg.textContent = "";
+      setLocation(pos.coords.latitude, pos.coords.longitude, "現在地");
+    }, function (err) {
+      msg.className = "msg error";
+      if (err.code === 1) {
+        msg.textContent = "位置情報が許可されませんでした。下の「場所の登録」からよく行く場所を登録すると、ボタンひとつで調べられます。";
+      } else {
+        msg.textContent = "現在地がうまく取れませんでした。電波の良いところでもう一度試すか、登録した場所のボタンを使ってください。";
+      }
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  }
+
+  function setLocation(lat, lon, label) {
+    state.loc = { lat: lat, lon: lon, label: label, muniCd: null, muniName: "", detail: "" };
+    state.tileCache = {};
+    $("placeName").textContent = "場所を確認中…";
+    lsSet("hinan_last", { lat: lat, lon: lon, label: label });
+
+    fetchJson(REV_GEO_URL + "?lat=" + lat + "&lon=" + lon).then(function (data) {
+      var r = data && data.results;
+      if (!r || !r.muniCd) throw new Error("住所が見つかりません");
+      var cd = String(r.muniCd);
+      while (cd.length < 5) cd = "0" + cd;
+      state.loc.muniCd = cd;
+      state.loc.detail = r.lv01Nm && r.lv01Nm !== "－" ? " " + r.lv01Nm : "";
+      renderPlaceName();
+      loadWarnings();
+      loadShelters();
+    }).catch(function () {
+      var msg = $("placeMsg");
+      msg.className = "msg error";
+      msg.textContent = "この地点の市区町村がわかりませんでした（海上など）。別の場所で試してください。";
+      $("placeName").textContent = label || "不明な場所";
+    });
+  }
+
+  /* ---------- 住所検索（設定） ---------- */
+  function searchAddress() {
+    var q = $("addrInput").value.trim();
+    var box = $("addrResults");
+    var msg = $("settingsMsg");
+    if (!q) return;
+    box.innerHTML = '<div class="loading">さがしています…</div>';
+    fetchJson(ADDR_SEARCH_URL + "?q=" + encodeURIComponent(q)).then(function (list) {
+      if (!list || list.length === 0) {
+        box.innerHTML = "";
+        msg.className = "msg error";
+        msg.textContent = "見つかりませんでした。市区町村名から入れると見つかりやすいです（例：川崎市中原区…）。";
+        return;
+      }
+      var html = "";
+      var max = Math.min(list.length, 5);
+      for (var i = 0; i < max; i++) {
+        var title = list[i].properties && list[i].properties.title ? list[i].properties.title : "候補" + (i + 1);
+        html += '<button data-i="' + i + '">' + esc(title) + "　→ この場所を登録</button>";
+      }
+      box.innerHTML = html;
+      msg.className = "msg"; msg.textContent = "";
+      var btns = box.querySelectorAll("button");
+      var pick = function () {
+        var item = list[parseInt(this.getAttribute("data-i"), 10)];
+        var lon = item.geometry.coordinates[0];
+        var lat = item.geometry.coordinates[1];
+        var title = item.properties && item.properties.title ? item.properties.title : "";
+        var label = prompt("この場所の名前を入れてください（例：自宅、学校、じいじの家）", "");
+        if (label === null) return;
+        label = label.trim() || title || "登録した場所";
+        var places = getSavedPlaces();
+        places.push({ label: label, lat: lat, lon: lon, addr: title });
+        setSavedPlaces(places);
+        box.innerHTML = "";
+        $("addrInput").value = "";
+        renderSavedList();
+        renderPlaceActions();
+        msg.className = "msg";
+        msg.textContent = "「" + label + "」を登録しました。上のボタンからすぐ使えます。";
+      };
+      for (var b = 0; b < btns.length; b++) btns[b].addEventListener("click", pick);
+    }).catch(function () {
+      box.innerHTML = "";
+      msg.className = "msg error";
+      msg.textContent = "検索がうまくいきませんでした。電波の状況を確認して、もう一度試してください。";
+    });
+  }
+
+  function renderSavedList() {
+    var box = $("savedList");
+    var places = getSavedPlaces();
+    if (places.length === 0) {
+      box.innerHTML = '<div class="msg">まだ登録された場所はありません。</div>';
+      return;
+    }
+    var html = "";
+    for (var i = 0; i < places.length; i++) {
+      html += '<div class="saved-item"><div><div class="nm">' + esc(places[i].label) + "</div>" +
+        '<div class="ad">' + esc(places[i].addr || "") + "</div></div>" +
+        '<button class="small" data-i="' + i + '">削除</button></div>';
+    }
+    box.innerHTML = html;
+    var btns = box.querySelectorAll("button");
+    for (var b = 0; b < btns.length; b++) {
+      btns[b].addEventListener("click", function () {
+        var idx = parseInt(this.getAttribute("data-i"), 10);
+        var places2 = getSavedPlaces();
+        if (!confirm("「" + places2[idx].label + "」を削除しますか？")) return;
+        places2.splice(idx, 1);
+        setSavedPlaces(places2);
+        renderSavedList();
+        renderPlaceActions();
+      });
+    }
+  }
+
+  /* ---------- 初期化 ---------- */
+  window.__retryWarn = function () { loadWarnings(); };
+
+  function init() {
+    renderHazardTabs();
+    renderPlaceActions();
+    renderSavedList();
+    $("btnAddrSearch").addEventListener("click", searchAddress);
+    $("addrInput").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") searchAddress();
+    });
+
+    var last = lsGet("hinan_last");
+    if (last && typeof last.lat === "number") {
+      setLocation(last.lat, last.lon, last.label || "前回の場所");
+    }
+  }
+  init();
+})();
+</script>
+</body>
+</html>
