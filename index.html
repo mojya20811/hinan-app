@@ -435,13 +435,46 @@
     });
   }
   // 5桁の市区町村コード → class20コードと名称
-  function findClass20(area, muniCd) {
-    var c20 = area.class20s || {};
-    var direct = muniCd + "00";
+  function class20Lookup(c20, cd5) {
+    var direct = cd5 + "00";
     if (c20[direct]) return { code: direct, name: c20[direct].name };
     var keys = Object.keys(c20);
     for (var i = 0; i < keys.length; i++) {
-      if (keys[i].indexOf(muniCd) === 0) return { code: keys[i], name: c20[keys[i]].name };
+      if (keys[i].indexOf(cd5) === 0) return { code: keys[i], name: c20[keys[i]].name };
+    }
+    return null;
+  }
+  // 政令指定都市の区コード範囲 → 市コード（気象庁の警報は市単位で発表されるため）
+  var SEIREI_RANGES = [
+    [1101, 1110, "01100"],   // 札幌市
+    [4101, 4105, "04100"],   // 仙台市
+    [11101, 11110, "11100"], // さいたま市
+    [12101, 12106, "12100"], // 千葉市
+    [14101, 14118, "14100"], // 横浜市
+    [14131, 14137, "14130"], // 川崎市
+    [14151, 14153, "14150"], // 相模原市
+    [15101, 15108, "15100"], // 新潟市
+    [22101, 22103, "22100"], // 静岡市
+    [22131, 22139, "22130"], // 浜松市
+    [23101, 23116, "23100"], // 名古屋市
+    [26101, 26111, "26100"], // 京都市
+    [27102, 27128, "27100"], // 大阪市
+    [27141, 27147, "27140"], // 堺市
+    [28101, 28111, "28100"], // 神戸市
+    [33101, 33104, "33100"], // 岡山市
+    [34101, 34108, "34100"], // 広島市
+    [40101, 40109, "40100"], // 北九州市
+    [40131, 40137, "40130"], // 福岡市
+    [43101, 43105, "43100"]  // 熊本市
+  ];
+  function findClass20(area, muniCd) {
+    var c20 = area.class20s || {};
+    var hit = class20Lookup(c20, muniCd);
+    if (hit) return hit;
+    var n = parseInt(muniCd, 10);
+    for (var i = 0; i < SEIREI_RANGES.length; i++) {
+      var r = SEIREI_RANGES[i];
+      if (n >= r[0] && n <= r[1]) return class20Lookup(c20, r[2]);
     }
     return null;
   }
